@@ -2,7 +2,8 @@
 let ws, paused = false, latestState = null;
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${wsProtocol}//${location.host}/ws`);
   ws.onopen = () => { loadSnapshots(); };
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
   ws.onclose = () => setTimeout(connect, 2000);  // auto-reconnect
