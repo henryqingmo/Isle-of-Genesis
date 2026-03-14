@@ -120,14 +120,14 @@ def _score_actions(agent: Agent, ctx: AgentContext, state: SimulationState, conf
         tx, ty = ctx.nearest_profession_tile
         dx = _sign(tx - agent.location[0])
         dy = _sign(ty - agent.location[1])
-        scores.append((Action(agent_id=aid, action_type="move", payload={"dx": dx, "dy": 0}), move_score))
+        scores.append((Action(agent_id=aid, action_type="move", payload={"dx": dx, "dy": dy}), move_score))
 
     if ctx.nearest_market and not ctx.at_market:
         mkt_score = 0.4 + (0.3 if ctx.surplus_qty > 2 else 0.0)
         mx, my = ctx.nearest_market
         dx = _sign(mx - agent.location[0])
         dy = _sign(my - agent.location[1])
-        scores.append((Action(agent_id=aid, action_type="move", payload={"dx": dx, "dy": 0}), mkt_score))
+        scores.append((Action(agent_id=aid, action_type="move", payload={"dx": dx, "dy": dy}), mkt_score))
 
     prof_bonus = {"farmer": 0.3, "lumberjack": 0.3, "miner": 0.3, "trader": 0.0}
     on_profession_tile = (ctx.current_tile_type == {
