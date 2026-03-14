@@ -84,6 +84,8 @@ class SimulationManager:
 
     def _record(self, result: TickResult) -> None:
         self._metrics_history.append(dataclasses.asdict(result.metrics))
+        if len(self._metrics_history) > 1000:
+            self._metrics_history = self._metrics_history[-1000:]
 
     async def _broadcast(self, payload: dict) -> None:
         dead = []
