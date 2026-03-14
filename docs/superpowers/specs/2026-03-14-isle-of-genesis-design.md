@@ -119,12 +119,20 @@ class Agent:
 ### Market & Government
 ```python
 @dataclass
+class TradeOrder:
+    agent_id: str
+    resource: Literal["food", "wood", "ore"]
+    side: Literal["buy", "sell"]
+    quantity: float
+    limit_price: float   # max willing to pay (buy) or min willing to accept (sell)
+
+@dataclass
 class Market:
     prices: Inventory
     supply: Inventory
     demand: Inventory
     trade_volume: float
-    pending_orders: list = field(default_factory=list)  # cleared each tick
+    pending_orders: list[TradeOrder] = field(default_factory=list)  # cleared each tick
 
 @dataclass
 class Government:
@@ -248,7 +256,7 @@ Each alive agent submits exactly 2 actions per tick. Global phase ordering for M
 4. `socialize` — small energy boost; minor cooperation effect on nearby agents
 5. `rest` — restores energy; if chosen as a slot, it is an opportunity cost (no produce/trade)
 
-Trade order matching occurs after all actions resolve (two-phase: collect then match).
+Trade order matching occurs after all actions resolve (two-phase: collect then match). Matching algorithm: for each resource, pair sell orders with buy orders in FIFO order; match if `sell.limit_price <= buy.limit_price`; execute at midpoint price `(sell.limit_price + buy.limit_price) / 2`. Unmatched orders emit `trade_failed`. If fewer than 2 scoreable actions exist for an agent (e.g., all guards block every action), `pick_top_two` pads with `rest` as a fallback to always return exactly 2 actions.
 
 ### Price Update (damped)
 
@@ -289,7 +297,7 @@ Dead agents remain in `state.agents` with `alive=False` until respawned. Fresh s
 - Voting heuristic: agents with high wealth prefer low tax; agents with high hunger prefer high tax
 - Majority wins; `tax_rate` takes effect the **following tick**
 - Tax is collected as a percentage of each completed trade value and held in `Government.treasury`
-- Treasury is redistributed evenly to all alive agents at vote time
+- Treasury is redistributed evenly to all alive agents **on the vote tick only** (i.e., when `tick == next_vote_tick`); redistribution and the new `tax_rate` both take effect the following tick
 
 ---
 
@@ -360,7 +368,10 @@ Tracked per tick and stored in memory as `list[TickMetrics]`. Persisted in snaps
 def gini(wealths: list[float]) -> float:
     n = len(wealths)
     s = sorted(wealths)
-    return sum(abs(s[i] - s[j]) for i in range(n) for j in range(n)) / (2 * n * sum(s))
+    total = sum(s)
+    if total == 0:
+        return 0.0   # all agents have zero wealth — perfect equality by convention
+    return sum(abs(s[i] - s[j]) for i in range(n) for j in range(n)) / (2 * n * total)
 ```
 
 ---
@@ -452,7 +463,11 @@ class ReplayResponse(BaseModel):
     events: list[dict] | None = None
 ```
 
-**Replay determinism:** Server loads snapshot (including RNG state), runs engine in fast-forward with no sleep, returns `ReplayResponse`. No broadcast to live WebSocket clients. Live sim remains paused during replay.
+**Replay determinism:** Server loads snapshot (including RNG state), runs engine in fast-forward with no sleep, returns `ReplayResponse`. No broadcast to live WebSocket clients. Live sim remains paused during replay and **stays paused** when replay finishes — an explicit `resume` command is required to restart it.
+
+**`set_speed` (`hz`):** Updates the live tick rate at runtime without requiring a reset. `SimConfig.tick_rate_hz` is mutated in place on the running engine; no re-initialization occurs.
+
+**`StateResponse.state`** is the full serialization of `SimulationState` (all agents with complete inventory and personality fields, market, government, world grid). The frontend uses this cached data for click-to-inspect agent detail — no additional endpoint is needed.
 
 ---
 
