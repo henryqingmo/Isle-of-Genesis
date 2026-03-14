@@ -105,7 +105,7 @@ class Agent:
     id: str
     location: tuple[int, int]
     profession: Literal["farmer", "lumberjack", "miner", "trader"]
-    wealth: float
+    wealth: float                  # cash only; net_worth is derived when needed
     energy: float                  # 0–1
     hunger: float                  # 0–1
     alive: bool
@@ -156,7 +156,7 @@ class Event:
 class TickMetrics:
     tick: int
     population: int
-    total_wealth: float
+    total_wealth: float            # sum of net_worth across all alive agents
     gini_coefficient: float
     total_food_inventory: float
     prices: Inventory
@@ -341,6 +341,17 @@ AGENT_MIGRATED_IN = "agent_migrated_in"
 ## Metrics (`simulation/metrics.py`)
 
 Tracked per tick and stored in memory as `list[TickMetrics]`. Persisted in snapshots.
+
+**Net worth** is a derived quantity, not stored on the agent:
+```python
+def net_worth(agent: Agent, prices: Inventory) -> float:
+    return (agent.wealth
+            + agent.inventory.food * prices.food
+            + agent.inventory.wood * prices.wood
+            + agent.inventory.ore  * prices.ore)
+```
+
+Gini and `TickMetrics.total_wealth` are computed over **net worth**, not cash, so inventory holdings count toward inequality measurement.
 
 ```python
 def gini(wealths: list[float]) -> float:
