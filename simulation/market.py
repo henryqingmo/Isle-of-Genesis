@@ -45,13 +45,21 @@ def settle(
                 buyer = agents[o["agent_id"]]
                 qty = o["quantity"]
                 cost = qty * price
+                if cost > buyer.wealth + 1e-9:
+                    events.append(Event(
+                        tick=tick, event_type=TRADE_FAILED,
+                        actors=[o["agent_id"]],
+                        payload={"resource": resource, "reason": "insufficient_funds"},
+                    ))
+                    continue
                 buyer.wealth -= cost
                 setattr(buyer.inventory, resource,
                         getattr(buyer.inventory, resource) + qty)
                 market.trade_volume += qty
             for o in sells:
                 seller = agents[o["agent_id"]]
-                qty_sold = o["quantity"] * fill_ratio_sellers
+                qty_sold = min(o["quantity"] * fill_ratio_sellers,
+                               getattr(seller.inventory, resource))
                 revenue = qty_sold * price
                 seller.wealth += revenue
                 setattr(seller.inventory, resource,
@@ -80,14 +88,15 @@ def settle(
                 market.trade_volume += qty
             for o in sells:
                 seller = agents[o["agent_id"]]
-                revenue = o["quantity"] * price
+                qty_sold = min(o["quantity"], getattr(seller.inventory, resource))
+                revenue = qty_sold * price
                 seller.wealth += revenue
                 setattr(seller.inventory, resource,
-                        getattr(seller.inventory, resource) - o["quantity"])
+                        getattr(seller.inventory, resource) - qty_sold)
                 events.append(Event(
                     tick=tick, event_type=TRADE_COMPLETED,
                     actors=[o["agent_id"]],
-                    payload={"resource": resource, "qty": o["quantity"], "price": price},
+                    payload={"resource": resource, "qty": qty_sold, "price": price},
                 ))
     return events
 
