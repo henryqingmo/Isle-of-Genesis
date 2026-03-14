@@ -22,7 +22,8 @@ function appendEvents(events, tick) {
     const div = document.createElement("div");
     div.className = "feed-entry " + (EVENT_CLASS[e.event_type] || "");
     const icon = EVENT_ICON[e.event_type] || "?";
-    div.textContent = `[${tick}] ${icon} ${e.event_type} ${e.actors.join(",")}`;
+    const eventTick = e.tick != null ? e.tick : tick;
+    div.textContent = `[${eventTick}] ${icon} ${e.event_type} ${e.actors.join(",")}`;
     list.prepend(div);
   }
   // cap DOM entries
