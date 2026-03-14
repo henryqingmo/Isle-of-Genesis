@@ -39,4 +39,12 @@ def build_world(config) -> "World":
             resource_yield = rng.uniform(0.8, 1.2)
             row.append(Tile(x=x, y=y, tile_type=tile_type, resource_yield=resource_yield))
         grid.append(row)
+
+    # Guarantee at least one town and one market tile so spawn and trading always work
+    all_tiles = [tile for row in grid for tile in row]
+    for required_type in ("town", "market"):
+        if not any(t.tile_type == required_type for t in all_tiles):
+            tile = rng.choice(all_tiles)
+            tile.tile_type = required_type
+
     return World(grid=grid)
