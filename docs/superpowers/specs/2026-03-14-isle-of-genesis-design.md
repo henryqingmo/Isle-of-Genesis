@@ -1,13 +1,15 @@
 # Isle of Genesis — Design Specification
 
 **Date:** 2026-03-14
-**Status:** Approved
+**Status:** Approved (v2 — simplified for v1 build)
 
 ---
 
 ## Overview
 
-Isle of Genesis is a minimal multi-agent world simulation. 30 agents inhabit a 20×20 grid, produce and trade three resources (food, wood, ore), vote on tax policy, and die or migrate based on survival conditions. The system is designed to produce emergent behaviors — specialization, trade networks, price fluctuations, wealth inequality — through simple deterministic heuristics, not LLM reasoning.
+Isle of Genesis is a minimal multi-agent world simulation. 30 agents inhabit a 20×20 grid, produce and trade three resources (food, wood, ore), and die or migrate based on survival conditions. The system is designed to produce emergent behaviors — specialization, trade flows, price fluctuations, wealth inequality — through simple deterministic heuristics, not LLM reasoning.
+
+**V1 scope:** movement, production, exchange, survival pressure. Government, order-book trading, and social dynamics are deferred to v2.
 
 **Core principles:**
 - Hard rules define the world; agents act within constraints
@@ -37,10 +39,9 @@ isle-of-genesis/
 │   │   ├── state.py        # SimulationState, TickResult
 │   │   └── actions.py      # Action (typed action requests)
 │   ├── market.py           # Market dataclass + price update logic
-│   ├── government.py       # Government dataclass + voting logic
 │   ├── engine.py           # Tick loop, action execution, event dispatch
 │   ├── heuristics.py       # Agent decision logic
-│   ├── events.py           # EventLog, Event, event_type constants
+│   ├── events.py           # Event, event_type constants
 │   ├── metrics.py          # TickMetrics, Gini, per-tick history
 │   └── config.py           # SimConfig (tick rate, agent count, seed, etc.)
 ├── server/
@@ -95,6 +96,9 @@ class World:
 ```
 
 ### Agent
+
+Personality is reduced to a single scalar for v1. `cooperation` and `trustfulness` are deferred to v2.
+
 ```python
 @dataclass
 class Agent:
@@ -109,38 +113,20 @@ class Agent:
     consecutive_starving: int = 0  # ticks at hunger=1.0; death threshold from SimConfig
     inventory: Inventory = field(default_factory=Inventory)
     skill: float = 0.5
-    # Personality (fixed at spawn, 0–1)
-    risk_aversion: float = 0.5
-    cooperation: float = 0.5
-    greed: float = 0.5
-    trustfulness: float = 0.5
+    risk_aversion: float = 0.5    # 0–1; only personality scalar used in v1
 ```
 
-### Market & Government
+### Market
+
+Trading uses global prices, not an order book. Agents submit buy/sell quantities; if aggregate demand exceeds supply for a resource, fills are rationed proportionally. Prices adjust the following tick based on that tick's demand/supply ratio.
+
 ```python
 @dataclass
-class TradeOrder:
-    agent_id: str
-    resource: Literal["food", "wood", "ore"]
-    side: Literal["buy", "sell"]
-    quantity: float
-    limit_price: float   # max willing to pay (buy) or min willing to accept (sell)
-
-@dataclass
 class Market:
-    prices: Inventory
-    supply: Inventory
-    demand: Inventory
-    trade_volume: float
-    pending_orders: list[TradeOrder] = field(default_factory=list)  # cleared each tick
-
-@dataclass
-class Government:
-    tax_rate: float
-    next_vote_tick: int
-    vote_interval: int
-    treasury: float
-    last_vote_result: Literal["low", "medium", "high"] | None = None
+    prices: Inventory              # global price per unit for each resource
+    supply: Inventory              # total units offered this tick (reset each tick)
+    demand: Inventory              # total units requested this tick (reset each tick)
+    trade_volume: float            # total units exchanged this tick
 ```
 
 ### State & Results
@@ -150,20 +136,18 @@ class SimulationState:
     world: World
     agents: list[Agent]
     market: Market
-    government: Government
 
 @dataclass
 class Action:
     agent_id: str
-    action_type: Literal["move", "produce", "trade", "socialize", "rest"]
+    action_type: Literal["move", "produce", "trade", "rest"]
     payload: dict = field(default_factory=dict)
 
 @dataclass
 class Event:
     event_id: str
     tick: int
-    event_type: str   # "trade_completed" | "trade_failed" | "resource_produced" |
-                      # "agent_starved" | "agent_migrated_in" | "policy_changed"
+    event_type: str   # see Event Log section for defined types
     actors: list[str]
     payload: dict
     visibility: Literal["public", "private", "system"] = "public"
@@ -198,8 +182,6 @@ class SimConfig:
     grid_size: int = 20
     tick_rate_hz: float = 2.0
     snapshot_interval: int = 50
-    vote_interval: int = 50
-    tax_options: tuple = (0.05, 0.15, 0.30)
     base_production: dict = field(default_factory=lambda: {
         "farmer":     {"food": 3.0},
         "lumberjack": {"wood": 2.0},
@@ -225,17 +207,14 @@ def tick(self) -> TickResult:
     tick = self.state.world.tick
     events: list[Event] = []
 
-    self._reset_tick_market_state()          # clear supply, demand, pending_orders
+    self._reset_tick_market_state()          # clear supply, demand, trade_volume
     self._prepare_tick_context()             # precompute per-agent observations
 
     actions = self._collect_actions_for_alive_agents()
     self._resolve_actions(actions, events)
 
     self._apply_upkeep_and_survival(events)  # food consumption, hunger, death
-    self._resolve_market_prices()            # match orders, update prices
-
-    self._collect_taxes(events)              # tax completed trades, redistribute treasury
-    self._maybe_vote(events)                 # vote affects next tick's tax_rate
+    self._settle_market(events)              # ration fills, update prices
     self._process_respawns(events)           # migrate in new settlers if due
 
     metrics = self._compute_metrics()
@@ -248,17 +227,26 @@ def tick(self) -> TickResult:
 
 ### Action Resolution
 
-Each alive agent submits exactly 2 actions per tick. Global phase ordering for MVP:
+Each alive agent submits exactly 2 actions per tick. `socialize` is removed in v1. Global phase ordering:
 
-1. `move` — reposition on grid
-2. `produce` — `output = base_rate * skill * energy`; deposited to inventory
-3. `trade` — order submission phase (buy/sell posted to `Market.pending_orders`)
-4. `socialize` — small energy boost; minor cooperation effect on nearby agents
-5. `rest` — restores energy; if chosen as a slot, it is an opportunity cost (no produce/trade)
+1. `move` — reposition on grid (one tile per action)
+2. `produce` — `output = base_rate * skill * energy`; deposited to agent inventory
+3. `trade` — agents on a market tile post buy/sell quantities at global prices
+4. `rest` — restores energy; occupies a full action slot (opportunity cost)
 
-Trade order matching occurs after all actions resolve (two-phase: collect then match). Matching algorithm: for each resource, pair sell orders with buy orders in FIFO order; match if `sell.limit_price <= buy.limit_price`; execute at midpoint price `(sell.limit_price + buy.limit_price) / 2`. Unmatched orders emit `trade_failed`. If fewer than 2 scoreable actions exist for an agent (e.g., all guards block every action), `pick_top_two` pads with `rest` as a fallback to always return exactly 2 actions.
+If fewer than 2 scoreable actions exist for an agent, `pick_top_two` pads with `rest`.
 
-### Price Update (damped)
+### Market Settlement (simple global price model)
+
+No order book. Each tick:
+
+1. Aggregate all `trade` actions into per-resource `supply` (sell quantities) and `demand` (buy quantities)
+2. If `demand[r] <= supply[r]`: all buyers fill in full; sellers fill proportionally
+3. If `demand[r] > supply[r]`: buyers are rationed proportionally to requested quantity; sellers fill in full
+4. Wealth transfers: buyer pays `quantity_filled * price[r]`; seller receives same (no spread, no tax in v1)
+5. Emit `trade_completed` per filled agent-pair; `trade_failed` for zero-fill attempts
+
+### Price Update (damped, end of tick)
 
 ```python
 ratio = demand[r] / max(supply[r], 0.001)
@@ -269,7 +257,7 @@ prices[r] = clamp(prices[r], price_min, price_max)
 ### Hunger, Death & Migration
 
 ```python
-# Per agent per tick
+# Per alive agent per tick
 if inventory.food >= food_per_tick:
     inventory.food -= food_per_tick
     hunger = max(0.0, hunger - 0.2)
@@ -289,15 +277,7 @@ if not agent.alive and tick >= agent.respawn_tick:
     emit("agent_migrated_in")
 ```
 
-Dead agents remain in `state.agents` with `alive=False` until respawned. Fresh settlers receive: minimal starter inventory, low wealth, random profession, random personality.
-
-### Government & Voting
-
-- Every `vote_interval` ticks, alive agents vote on tax rate (`low=0.05`, `medium=0.15`, `high=0.30`)
-- Voting heuristic: agents with high wealth prefer low tax; agents with high hunger prefer high tax
-- Majority wins; `tax_rate` takes effect the **following tick**
-- Tax is collected as a percentage of each completed trade value and held in `Government.treasury`
-- Treasury is redistributed evenly to all alive agents **on the vote tick only** (i.e., when `tick == next_vote_tick`); redistribution and the new `tax_rate` both take effect the following tick
+Dead agents remain in `state.agents` with `alive=False` until respawned. Fresh settlers receive: minimal starter inventory, low wealth, random profession, random `risk_aversion`.
 
 ---
 
@@ -307,27 +287,28 @@ Dead agents remain in `state.agents` with `alive=False` until respawned. Fresh s
 def decide(agent: Agent, state: SimulationState, config: SimConfig) -> list[Action]:
     context = build_context(agent, state)
     candidates = score_actions(agent, context, config)
-    return pick_top_two(candidates)   # deterministic given seeded RNG
+    return pick_top_two(candidates)   # deterministic given seeded RNG; pads with rest
 ```
 
 ### Survival Override (hard rule, pre-scoring)
 ```python
 if agent.hunger > 0.7 and agent.inventory.food < 1:
-    # slot 1: move toward nearest market/town
-    # slot 2: buy food (if at market) else rest
+    # slot 1: move toward nearest market tile
+    # slot 2: trade(buy food) if at market, else rest
     return survival_actions(agent, state)
 ```
 
 ### Action Scoring
 
+`socialize` removed. `risk_aversion` is the only personality scalar.
+
 | Action | Base score | Key modifiers |
 |--------|-----------|---------------|
 | `move→profession_tile` | 0.5 | +0.2 if energy > 0.6 |
-| `move→market` | 0.4 | +greed if surplus > 2; +0.3 if starving |
+| `move→market` | 0.4 | +0.3 if surplus inventory > 2 units |
 | `produce` | 0.6 | × energy × skill; −hunger×0.3 |
-| `trade(sell)` | 0.5 | +greed; only if at_market and surplus > 1 |
+| `trade(sell)` | 0.5 | only if at_market and surplus > 1 |
 | `trade(buy food)` | 0.8 | if hunger > 0.5; −risk_aversion×0.2 |
-| `socialize` | 0.2 | +cooperation; only if nearby_agents |
 | `rest` | 0.3 | +risk_aversion×0.4 if energy < 0.3 |
 
 ### Profession Bias
@@ -337,25 +318,23 @@ if agent.hunger > 0.7 and agent.inventory.food < 1:
 | farmer | +0.3 to `produce` on farm tile |
 | lumberjack | +0.3 to `produce` on forest tile |
 | miner | +0.3 to `produce` on mine tile |
-| trader | +0.4 to all `trade` actions; no produce bonus |
+| trader | +0.4 to `trade` actions; no produce bonus |
 
-**Trader arbitrage:** buy resource with lowest `price/demand` ratio; move to market; sell at current price. Position size scaled by `greed`; capped by `risk_aversion`.
+**Trader heuristic:** each tick, identify the resource with the highest `price[r]` relative to its `demand[r]`; buy low-price surplus from producers (via market), accumulate, sell when price rises. Position size is uncapped in v1 (no `greed` scalar).
 
 ---
 
 ## Event Log (`simulation/events.py`, `persistence/eventlog.py`)
 
 ```python
-# Defined event types
 TRADE_COMPLETED   = "trade_completed"
 TRADE_FAILED      = "trade_failed"
 RESOURCE_PRODUCED = "resource_produced"
 AGENT_STARVED     = "agent_starved"
 AGENT_MIGRATED_IN = "agent_migrated_in"
-POLICY_CHANGED    = "policy_changed"
 ```
 
-Events are appended to `logs/events.jsonl` (one JSON object per line) and also returned in `TickResult.events` for WebSocket broadcast. The event log is the source of truth for replay.
+`policy_changed` is removed in v1 (no government). Events are appended to `logs/events.jsonl` (one JSON object per line) and returned in `TickResult.events` for WebSocket broadcast.
 
 ---
 
@@ -363,7 +342,6 @@ Events are appended to `logs/events.jsonl` (one JSON object per line) and also r
 
 Tracked per tick and stored in memory as `list[TickMetrics]`. Persisted in snapshots.
 
-**Gini coefficient:**
 ```python
 def gini(wealths: list[float]) -> float:
     n = len(wealths)
@@ -411,13 +389,17 @@ def gini(wealths: list[float]) -> float:
 {"type": "reset"}
 ```
 
+`set_speed` mutates `SimConfig.tick_rate_hz` on the running engine without re-initialization.
+
 **Engine state machine:**
 ```
-RUNNING ──pause/reset──→ PAUSED
+RUNNING ──pause──→ PAUSED
 PAUSED  ──resume──→ RUNNING
 PAUSED  ──step──→ PAUSED    (advances one tick)
 any     ──reset──→ RUNNING  (re-initializes from SimConfig)
 ```
+
+Both WebSocket and `POST /control` can issue any of these commands.
 
 ### REST Endpoints
 
@@ -434,6 +416,8 @@ any     ──reset──→ RUNNING  (re-initializes from SimConfig)
 
 ```python
 class StateResponse(BaseModel):
+    # state is full SimulationState serialization (all agents, market, world grid)
+    # — frontend uses this for click-to-inspect without a separate endpoint
     state: dict
     status: Literal["running", "paused"]
     tick_rate_hz: float
@@ -459,21 +443,18 @@ class ReplayRequest(BaseModel):
 class ReplayResponse(BaseModel):
     final_tick: int
     state: dict
-    metrics: list[dict] | None = None
-    events: list[dict] | None = None
+    # always populated; includes full metrics and event history for the replayed range
+    metrics: list[dict]
+    events: list[dict]
 ```
 
-**Replay determinism:** Server loads snapshot (including RNG state), runs engine in fast-forward with no sleep, returns `ReplayResponse`. No broadcast to live WebSocket clients. Live sim remains paused during replay and **stays paused** when replay finishes — an explicit `resume` command is required to restart it.
-
-**`set_speed` (`hz`):** Updates the live tick rate at runtime without requiring a reset. `SimConfig.tick_rate_hz` is mutated in place on the running engine; no re-initialization occurs.
-
-**`StateResponse.state`** is the full serialization of `SimulationState` (all agents with complete inventory and personality fields, market, government, world grid). The frontend uses this cached data for click-to-inspect agent detail — no additional endpoint is needed.
+**Replay determinism:** Server loads snapshot (including RNG state), runs engine in fast-forward with no sleep, returns `ReplayResponse`. No broadcast to live WebSocket clients. Live sim **stays paused** after replay — explicit `resume` required to restart.
 
 ---
 
 ## Frontend Visualization
 
-**Layout:** Map-dominant (Option A). Grid takes left 70% of viewport; right column has metrics panel (top) and event feed (bottom).
+**Layout:** Map-dominant. Grid takes left ~70% of viewport; right column has metrics panel (top) and event feed (bottom).
 
 ### Files
 
@@ -481,7 +462,7 @@ class ReplayResponse(BaseModel):
 |------|---------------|
 | `index.html` | Shell, layout, control bar (pause/resume/step/speed slider/replay picker) |
 | `app.js` | WebSocket client, typed envelope dispatch, control message sending |
-| `canvas.js` | 20×20 grid on `<canvas>`; tile colors by type; agents as profession-colored dots; click to inspect |
+| `canvas.js` | 20×20 grid on `<canvas>`; tile colors by type; agents as profession-colored dots; click to inspect agent from cached state |
 | `feed.js` | Scrolling event feed; color-coded by event type; max 100 DOM entries |
 | `charts.js` | Plain SVG sparklines for food supply, prices (3 lines), Gini, population |
 
@@ -502,16 +483,16 @@ class ReplayResponse(BaseModel):
 | miner | slate |
 | trader | yellow |
 
-Dead agents are not rendered. Migrant arrival is shown as a brief spawn animation.
+Dead agents are not rendered.
 
 ---
 
 ## Replay & Debugging
 
-- **Timeline scrubbing:** UI provides a slider over available snapshot IDs. Selecting one calls `POST /replay` and displays the returned state statically.
-- **Step mode:** Pause sim, then click Step to advance one tick at a time. Useful for debugging heuristic decisions.
+- **Timeline scrubbing:** UI slider over available snapshot IDs. Selecting one calls `POST /replay` and displays returned state statically.
+- **Step mode:** Pause sim, click Step to advance one tick at a time.
 - **Event filter:** Event feed supports filtering by type via dropdown.
-- **Metrics export:** `GET /metrics` returns full history; can be saved as JSON for external analysis.
+- **Metrics export:** `GET /metrics` returns full history as JSON.
 
 ---
 
@@ -520,16 +501,23 @@ Dead agents are not rendered. Migrant arrival is shown as a brief spawn animatio
 | Behavior | Mechanism |
 |---------|-----------|
 | Specialization | Profession bias + tile proximity → agents cluster on matching tiles |
-| Trade networks | Traders arbitrage price differentials → move between producers and market |
+| Trade flows | Traders move surplus resources from producers to market |
 | Price fluctuations | Supply/demand imbalance + starvation events spike food prices |
 | Wealth inequality | Traders accumulate; new migrants start poor → Gini rises over time |
-| Tax cycles | High inequality → majority votes high tax → redistribution → inequality drops |
+
+---
+
+## Deferred to V2
+
+- **Government:** voting, tax collection, treasury redistribution, `policy_changed` events
+- **Order-book trading:** bid/ask semantics, limit prices, partial fills, `TradeOrder` dataclass
+- **Social layer:** `cooperation`, `trustfulness` personality scalars; `socialize` action; relationship dynamics
 
 ---
 
 ## Implementation Order
 
-1. Data models (`simulation/models/`, `market.py`, `government.py`, `config.py`)
+1. Data models (`simulation/models/`, `market.py`, `config.py`)
 2. Simulation engine skeleton (`engine.py`, `events.py`, `metrics.py`)
 3. Agent heuristics (`heuristics.py`)
 4. Persistence layer (`persistence/`)
