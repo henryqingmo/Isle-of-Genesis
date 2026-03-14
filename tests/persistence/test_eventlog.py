@@ -43,3 +43,26 @@ def test_read_events_filter_by_type(tmp_path):
     events = read_events(log_path, event_type=TRADE_COMPLETED)
     assert len(events) == 1
     assert events[0].event_type == TRADE_COMPLETED
+
+
+def test_read_events_nonexistent_file(tmp_path):
+    """read_events returns [] when log file doesn't exist."""
+    log_path = tmp_path / "no_events.jsonl"
+    assert not log_path.exists()
+    assert read_events(log_path) == []
+
+def test_read_events_combined_filters(tmp_path):
+    """All three filters (from_tick, to_tick, event_type) are applied together."""
+    log_path = tmp_path / "events.jsonl"
+    append_event(make_event(tick=1, event_type=TRADE_COMPLETED), log_path)
+    append_event(make_event(tick=2, event_type="agent_starved"), log_path)
+    append_event(make_event(tick=3, event_type=TRADE_COMPLETED), log_path)
+    append_event(make_event(tick=4, event_type=TRADE_COMPLETED), log_path)
+    append_event(make_event(tick=5, event_type="agent_starved"), log_path)
+
+    events = read_events(log_path, from_tick=2, to_tick=4, event_type=TRADE_COMPLETED)
+
+    assert len(events) == 2
+    assert all(2 <= e.tick <= 4 for e in events)
+    assert all(e.event_type == TRADE_COMPLETED for e in events)
+    assert {e.tick for e in events} == {3, 4}

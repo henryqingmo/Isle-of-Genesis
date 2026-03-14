@@ -50,3 +50,20 @@ def test_list_snapshots(tmp_path):
     entries = list_snapshots(tmp_path)
     assert len(entries) == 2
     assert entries[0]["snapshot_id"] == "tick_0050"
+
+
+def test_list_snapshots_empty_dir(tmp_path):
+    """list_snapshots returns empty list when directory doesn't exist."""
+    nonexistent = tmp_path / "no_such_dir"
+    assert list_snapshots(nonexistent) == []
+
+def test_list_snapshots_ordered_by_tick(tmp_path):
+    """list_snapshots returns entries sorted by tick regardless of write order."""
+    state = make_state()
+    rng = random.Random(1)
+    save_snapshot(state, tick=100, rng=rng, snapshot_dir=tmp_path)
+    save_snapshot(state, tick=50, rng=rng, snapshot_dir=tmp_path)
+    entries = list_snapshots(tmp_path)
+    assert len(entries) == 2
+    assert entries[0]["snapshot_id"] == "tick_0050"
+    assert entries[1]["snapshot_id"] == "tick_0100"

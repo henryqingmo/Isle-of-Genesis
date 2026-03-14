@@ -34,3 +34,18 @@ def test_get_metrics_returns_list(client):
     resp = client.get("/metrics")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+def test_get_events_empty(client):
+    resp = client.get("/events")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+def test_get_metrics_with_tick_range(client):
+    resp = client.get("/metrics", params={"from_tick": 0, "to_tick": 10})
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+def test_replay_nonexistent_snapshot_returns_404(client):
+    resp = client.post("/replay", json={"snapshot_id": "tick_9999"})
+    assert resp.status_code == 404
