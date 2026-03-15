@@ -1,19 +1,19 @@
 # Isle of Genesis — UI Redesign Specification
 
 **Date:** 2026-03-14
-**Status:** Approved
+**Status:** Approved (v2)
 
 ---
 
 ## Overview
 
-Replace the current flat-color canvas and dark GitHub-themed UI chrome with a cozy farming game aesthetic that uses the provided `tiny_village/tiny_village_tilemap.png` and `tiny_village/player.png` sprite sheets. The redesign covers everything: canvas rendering, toolbar, side panel, and event display.
+Replace the current flat-color canvas and dark GitHub-themed UI chrome with a cozy farming game aesthetic. Three tile types use sprites sliced from `tiny_village/tiny_village_tilemap.png`; the remaining two tile types and all agents are drawn programmatically on the canvas. The redesign covers everything: canvas rendering, toolbar, side panel, and event display.
 
 ---
 
 ## Scope
 
-Full UI overhaul — canvas sprites, layout restructure, and complete visual reskin of all chrome.
+Full UI overhaul — canvas sprites, layout restructure, and complete visual reskin of all chrome. No backend changes.
 
 ---
 
@@ -36,8 +36,8 @@ Full UI overhaul — canvas sprites, layout restructure, and complete visual res
 
 Changes from current layout:
 - Event feed panel removed from right column; replaced by horizontal scrolling ticker at the bottom
-- Agent info bar moved between canvas and ticker (was below canvas already)
-- Right panel now contains only metrics (Village Stats + Market Prices), giving it more vertical space per section
+- Agent info bar sits between the canvas row and the ticker (position unchanged from current)
+- Right panel contains only metrics (Village Stats + Market Prices), giving each section more vertical space
 
 ---
 
@@ -58,9 +58,9 @@ Changes from current layout:
 | Secondary text / muted | `#c8a87a` / `#a08060` |
 | Accent / titles | `#f5c842` |
 
-**Typography:** `'Courier New', monospace` throughout — consistent with existing codebase, fits the pixel-art aesthetic.
+**Typography:** `'Courier New', monospace` throughout.
 
-**Borders:** 2–3px solid borders with warm brown tones. Subtle `border-radius: 3–6px` on panels and buttons. Double-border on the outermost UI frame (`box-shadow` trick: `0 0 0 6px #1a1208, 0 0 0 8px #7a5c30`).
+**Borders:** 2–3px solid warm brown. `border-radius: 3–6px` on panels and buttons.
 
 ---
 
@@ -68,141 +68,162 @@ Changes from current layout:
 
 Same controls as today, reskinned:
 - Title: `🏡 Isle of Genesis` in `#f5c842`
-- Buttons: Pause / Step / Reset / Replay — warm brown background, hover lightens border
-- Speed slider + label
+- Buttons: Pause / Step / Reset / Replay — warm brown background, border lightens on hover
+- Speed slider + Hz label
 - Snapshot select dropdown
-- Tick display (right-aligned): `📅 Day {N}`
+- Tick display (right-aligned): `📅 Day {N}` (replaces `Tick: N`)
 
 ---
 
 ## Canvas — Sprite Rendering
 
-### Approach: Sprite sheet slicing via `drawImage()`
+### Sprite source
 
-Both PNGs are loaded as `Image` objects. Sprites are sliced at runtime using:
+Only `tiny_village/tiny_village_tilemap.png` is used. `player.png` is not used — agents are drawn programmatically (see below).
 
+The tilemap is loaded once at startup:
 ```js
-ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+const TILEMAP = new Image();
+TILEMAP.src = 'tiny_village/tiny_village_tilemap.png';
 ```
 
-No external build step. No extracted files. Coordinates are hardcoded constants.
+The path `tiny_village/tiny_village_tilemap.png` is relative to the page root (i.e., served from the project root by uvicorn's static file handler). If uvicorn does not already serve `tiny_village/` as a static directory, a one-line mount must be added to `server/main.py`:
+```python
+app.mount("/tiny_village", StaticFiles(directory="tiny_village"), name="tiny_village")
+```
 
 ### Tile rendering (two-pass per cell)
 
-**Pass 1 — Grass base:** Every cell is filled with a solid grass-green color by tile type:
+**Pass 1 — Base fill:** Every cell is filled with a solid color:
 
 | Tile type | Base fill |
 |-----------|-----------|
-| (any / plain) | `#3a7020` |
+| plain / grass | `#3a7020` |
 | forest | `#2a5818` |
 | mine | `#3a3028` |
 | farm | `#5a7a20` |
 | town | `#4a3820` |
 | market | `#5a4810` |
 
-**Pass 2 — Overlay sprite:** A centered sprite from `tiny_village_tilemap.png` is drawn on top of the base color. Sprite is scaled to fit within the cell (leaving a small margin so the base color shows as a border).
+**Pass 2 — Overlay:** Three tile types draw a sprite from the tilemap; two draw a programmatic shape.
 
-Tile-to-sprite mapping (pixel coordinates TBD during implementation by inspecting the sheet):
+**Tilemap sprites (16×16 source, `ctx.imageSmoothingEnabled = false`):**
 
-| Tile type | Sprite description |
-|-----------|--------------------|
-| farm | Crop / farm plot tile |
-| forest | Single tree (leafy) |
-| mine | Rock / boulder |
-| town | Wooden house / building |
-| market | Market stall / shop |
+| Tile type | sx | sy | sw | sh | Notes |
+|-----------|----|----|----|----|-------|
+| forest | 272 | 256 | 16 | 16 | Single-tile sapling/tree |
+| mine | 160 | 32 | 16 | 16 | Gray boulder |
+| farm | 176 | 352 | 16 | 16 | Tilled soil patch |
+
+Each sprite is drawn centered in the cell, scaled to `cellSize - 4` pixels (2px margin on each side so the base color shows as a subtle border).
+
+**Programmatic shapes:**
+
+- **town** — draw a small house: filled rect (walls, `#c8a050`) + triangle roof (`#8b3a1a`) using canvas path
+- **market** — draw an awning shape: filled rect (stall top, `#e8c040`) + narrower rect (counter, `#c8a050`)
+
+Both shapes are drawn at fixed proportions relative to `cellSize`.
 
 ### Agent rendering
 
-Each alive agent is drawn as a single frame from `tiny_village/player.png`:
-- Frame: facing-down idle (top-left of the sheet)
-- Position: bottom-right corner of the agent's cell, scaled to ~40% of cell size
-- Selected agent: white glow ring drawn beneath the sprite
+Agents are drawn programmatically — no sprite sheet used.
 
-Agent sprite is the same frame for all professions in v1. Profession is communicated by a small colored dot (existing behavior) drawn at bottom-right of the sprite, or by the existing color scheme if the sprite is too small to read at scale.
+Each alive agent is drawn as:
+1. A filled circle (radius `cellSize * 0.22`) using the existing profession color:
+   - farmer: `#4caf50`, lumberjack: `#795548`, miner: `#78909c`, trader: `#ffd600`
+2. A small pixel-art hat or icon drawn on top to distinguish professions visually at larger zoom:
+   - farmer: green stalk `|` above circle
+   - lumberjack: brown `×` (axe mark)
+   - miner: gray `─` (pick)
+   - trader: yellow `$`
+   All drawn with `ctx.fillText` at `Math.max(8, cellSize * 0.3)` font size, centered on the circle.
+3. Selected agent: white stroke ring around the circle (`lineWidth = 1.5`, `strokeStyle = '#fff'`). Selection state is read from the existing `selectedAgentId` variable already present in `canvas.js`.
 
-Dead agents: not rendered (unchanged from current behavior).
+Dead agents: not rendered (unchanged).
 
 ---
 
 ## Right Panel — Metrics
 
-Two stacked sections, separated by a divider:
+Two stacked sections divided by a `#7a5c30` border:
 
 ### Village Stats
-- Population (alive / total)
+- Population (alive count / total)
 - Total wealth ($)
 - Gini coefficient
-- Food supply (units per agent)
-- Two SVG sparklines: population over time, Gini over time
+- Food supply (units per alive agent)
+- Two SVG sparklines stacked: population over time (green `#4caf50`), Gini over time (amber `#f5c842`)
 
 ### Market Prices
-- Food / Wood / Ore current prices with trend arrow (▲ ▼ ─)
-- Three-line SVG sparkline (one per resource, color-coded green/tan/slate)
+- Food / Wood / Ore current price with trend arrow: `▲` if last tick higher, `▼` if lower, `─` if equal
+- Three-line SVG sparkline: food `#90c86a`, wood `#c8a87a`, ore `#78909c`
+
+Sparklines use the existing `charts.js` SVG generation; only stroke colors and background change.
+
+Zero-value inventory fields (e.g. `ore: 0.0`) are still shown — omitting them would cause the bar width to shift on every tick.
 
 ---
 
 ## Agent Info Bar
 
-Single line between canvas and event ticker:
+Single line between canvas row and event ticker. Content set by `showAgentInfo()` in `canvas.js` (existing function, unchanged logic):
+
 ```
 🧑 trader_07 · trader · wealth: $312.40 · food: 1.2 wood: 4.0 ore: 0.0 · hunger: 12% energy: 88%
 ```
-Default text when nothing selected: `Click an agent to inspect`.
 
-Styled as a parchment-tone bar (`#3d2b15` background, `#7a5c30` top border).
+Default when nothing selected: `🧑 Click an agent to inspect`.
+
+Style: `background: #3d2b15`, `border-top: 3px solid #7a5c30`, `font-size: 0.68rem`, `color: #c8a87a`. Agent id and numeric values in `#f5deb3`.
 
 ---
 
 ## Event Ticker
 
-Horizontal continuously-scrolling bar at the bottom of the UI:
+Replaces the `#feed-panel` vertical list. Implementation:
 
-- Single line, left-to-right scroll animation (CSS `@keyframes` translate)
-- Events separated by `·` or whitespace gap
-- Color-coded by type (unchanged):
-  - Trade: `#3fb950` (green)
-  - Starvation: `#f85149` (red)
-  - Migration: `#d2a8ff` (purple)
-  - Production: `#a08060` (muted)
-- Max events in DOM: 100 (same as current feed, pruned as ticker grows)
-- Label: `📜 Events` pinned at left, non-scrolling
+**DOM structure:**
+```html
+<div id="ticker-bar">
+  <span id="ticker-label">📜 Events</span>
+  <div id="ticker-track">
+    <div id="ticker-inner"><!-- span.ticker-entry elements appended here --></div>
+  </div>
+</div>
+```
+
+**Scroll:** `#ticker-inner` uses `animation: ticker-scroll Xs linear infinite`. The animation duration `X` is recalculated whenever entries are added: `X = ticker-inner.scrollWidth / 60` (pixels per second = 60). This keeps scroll speed constant regardless of content length.
+
+**Loop:** `#ticker-inner` content is duplicated once (CSS clone approach — identical second copy appended) so the scroll appears seamless when it wraps.
+
+**New events:** `feed.js` appends a `<span class="ticker-entry ev-{type}">` to `#ticker-inner`, then rebuilds the duplicate copy and recalculates animation duration. Max 100 entries; oldest pruned when limit is reached (prune from both original and duplicate).
+
+**Color classes** (unchanged from current feed):
+- `.ev-trade`: `#3fb950`
+- `.ev-starved`: `#f85149`
+- `.ev-migrated`: `#d2a8ff`
+- `.ev-produced`: `#8b949e`
+
+**Label:** `📜 Events` in `#f5c842`, pinned left, not part of the scrolling element.
 
 ---
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `frontend/index.html` | Full reskin: new color palette, layout, ticker structure |
-| `frontend/canvas.js` | Sprite sheet loading + two-pass tile rendering + player sprite agents |
-| `frontend/feed.js` | Convert from vertical feed to horizontal ticker entries |
-| `frontend/charts.js` | Reskin SVG sparklines to match warm palette |
-| `frontend/app.js` | Minor: update tick display label from `Tick:` to `📅 Day` |
-
-No backend changes required.
-
----
-
-## Sprite Sheet Notes
-
-Both images live at `tiny_village/` relative to the project root. The frontend will reference them as:
-
-```js
-const TILEMAP = new Image();
-TILEMAP.src = '../tiny_village/tiny_village_tilemap.png';
-
-const PLAYER = new Image();
-PLAYER.src = '../tiny_village/player.png';
-```
-
-Exact sprite coordinates for each tile type and player frame will be determined by visual inspection of the sheets during implementation and stored as named constants at the top of `canvas.js`.
+| File | Change | Depth |
+|------|--------|-------|
+| `frontend/index.html` | Full reskin: new palette, layout restructure, ticker DOM | Structural |
+| `frontend/canvas.js` | Tilemap loading + two-pass tile render + programmatic agents | Core rewrite of render loop |
+| `frontend/feed.js` | Replace vertical list logic with horizontal ticker append + scroll recalc | Moderate |
+| `frontend/charts.js` | Color-only change: update stroke/background constants to warm palette | Cosmetic |
+| `frontend/app.js` | Change tick display from `Tick: N` to `📅 Day N` | 1-line |
+| `server/main.py` | Mount `tiny_village/` as static directory (if not already served) | 1-line |
 
 ---
 
 ## Out of Scope
 
 - Animation (walking, tool-use frames) — deferred
-- Multiple profession-specific player sprites — deferred (all use same frame in v1)
+- Profession-specific distinct sprite art — deferred (programmatic icons used in v1)
 - Sound effects
-- Backend changes
+- Any backend simulation logic changes
