@@ -39,7 +39,7 @@ document.getElementById("btn-step").addEventListener("click", () => {
 document.getElementById("btn-reset").addEventListener("click", () => {
   send({ type: "reset" });
   metricsHistory.length = 0;
-  document.getElementById("feed-list").innerHTML = "";
+  resetTicker();
 });
 
 const speedSlider = document.getElementById("speed");
