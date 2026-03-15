@@ -55,7 +55,7 @@ function renderPricesPanel(latest) {
     : null;
 
   for (const r of resources) {
-    const cur  = latest.prices[r];
+    const cur  = latest.prices?.[r] ?? 0;
     const row  = document.createElement("div");
     row.style.cssText = "display:flex;justify-content:space-between;font-size:0.65rem;margin-bottom:3px;";
     const trend = prev == null ? "─"
