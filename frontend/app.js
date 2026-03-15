@@ -18,9 +18,9 @@ function onMessage(msg) {
       latestState = { agents: result.agents, market: result.market, world: result.world };
       renderState(latestState);
     }
+    document.getElementById("tick-display").textContent = `📅 Day ${result.tick}`;
     if (result.events) appendEvents(result.events, result.tick);
     if (result.metrics) updateCharts(result.metrics);
-    document.getElementById("tick-display").textContent = `📅 Day ${result.tick}`;
   } else if (msg.type === "status") {
     paused = msg.payload.status === "paused";
     document.getElementById("btn-pause").textContent = paused ? "Resume" : "Pause";
