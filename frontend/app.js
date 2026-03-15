@@ -20,7 +20,7 @@ function onMessage(msg) {
     }
     if (result.events) appendEvents(result.events, result.tick);
     if (result.metrics) updateCharts(result.metrics);
-    document.getElementById("tick-display").textContent = `Tick: ${result.tick}`;
+    document.getElementById("tick-display").textContent = `📅 Day ${result.tick}`;
   } else if (msg.type === "status") {
     paused = msg.payload.status === "paused";
     document.getElementById("btn-pause").textContent = paused ? "Resume" : "Pause";
@@ -76,7 +76,7 @@ document.getElementById("btn-replay").addEventListener("click", async () => {
   renderState(latestState);
   if (data.metrics) data.metrics.forEach(m => updateCharts(m));
   if (data.events) appendEvents(data.events, data.final_tick);
-  document.getElementById("tick-display").textContent = `Tick: ${data.final_tick} (replay)`;
+  document.getElementById("tick-display").textContent = `📅 Day ${data.final_tick} (replay)`;
 });
 
 // init
