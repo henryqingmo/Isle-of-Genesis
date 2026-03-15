@@ -120,6 +120,36 @@ function drawMarketShape(px, py, cs) {
   ctx.fillRect(px + cs * 0.15, py + cs * 0.45, cs * 0.7, cs * 0.4);
 }
 
+function drawAgent(px, py, cs, agent) {
+  const cx = px + cs / 2;
+  const cy = py + cs / 2;
+  const r  = Math.max(3, cs * 0.22);
+
+  // selection ring (drawn first, beneath fill)
+  if (agent.id === selectedAgentId) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // profession-colored circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = AGENT_COLORS[agent.profession] || "#ffffff";
+  ctx.fill();
+
+  // profession icon
+  const icon = AGENT_ICONS[agent.profession] || "?";
+  const fontSize = Math.max(8, Math.floor(cs * 0.3));
+  ctx.fillStyle = "#1a1208";
+  ctx.font = `bold ${fontSize}px 'Courier New', monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(icon, cx, cy);
+}
+
 function onCanvasClick(e) {
   if (!state) return;
   const rect = canvas.getBoundingClientRect();
