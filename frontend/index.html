@@ -5,60 +5,162 @@
   <title>Isle of Genesis</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0d1117; color: #c9d1d9; font-family: monospace; height: 100vh; display: flex; flex-direction: column; }
 
+    body {
+      background: #1a1208;
+      color: #f5deb3;
+      font-family: 'Courier New', monospace;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ── */
     #toolbar {
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px 16px; background: #161b22; border-bottom: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      background: #3d2b15;
+      border-bottom: 3px solid #7a5c30;
       flex-shrink: 0;
     }
-    #toolbar h1 { font-size: 0.9rem; color: #58a6ff; margin-right: 8px; }
+    #toolbar h1 {
+      font-size: 0.85rem;
+      color: #f5c842;
+      margin-right: 4px;
+    }
     #toolbar button {
-      background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
-      padding: 4px 10px; cursor: pointer; font-family: monospace; font-size: 0.8rem;
+      background: #5a3e20;
+      border: 2px solid #8b6040;
+      color: #f5deb3;
+      padding: 3px 9px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      border-radius: 3px;
     }
-    #toolbar button:hover { background: #30363d; }
-    #tick-display { font-size: 0.8rem; color: #8b949e; margin-left: auto; }
+    #toolbar button:hover { background: #7a5530; border-color: #c8a87a; }
+    #tick-display { font-size: 0.75rem; color: #c8a87a; margin-left: auto; }
 
+    label { font-size: 0.72rem; color: #a08060; }
+    input[type=range] { width: 70px; accent-color: #f5c842; }
+    select {
+      background: #5a3e20;
+      border: 2px solid #8b6040;
+      color: #f5deb3;
+      font-size: 0.7rem;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ── Main row ── */
     #main {
-      display: flex; flex: 1; overflow: hidden;
+      display: flex;
+      flex: 1;
+      overflow: hidden;
     }
+
     #canvas-container {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      background: #0d1117; overflow: hidden;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1208;
+      overflow: hidden;
     }
-    canvas { display: block; }
+    canvas { display: block; image-rendering: pixelated; }
 
+    /* ── Right panel ── */
     #right-panel {
-      width: 280px; flex-shrink: 0; display: flex; flex-direction: column;
-      border-left: 1px solid #30363d; background: #161b22;
+      width: 220px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-left: 3px solid #7a5c30;
+      background: #2d1f0e;
     }
-    #metrics-panel {
-      flex: 1; padding: 10px; border-bottom: 1px solid #30363d; overflow: hidden;
+    .panel-section {
+      flex: 1;
+      padding: 9px 10px;
+      border-bottom: 2px solid #7a5c30;
+      overflow: hidden;
     }
-    #metrics-panel h2 { font-size: 0.75rem; color: #58a6ff; margin-bottom: 8px; }
-    #feed-panel { flex: 1; padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
-    #feed-panel h2 { font-size: 0.75rem; color: #58a6ff; margin-bottom: 8px; }
-    #feed-list { flex: 1; overflow-y: auto; font-size: 0.7rem; line-height: 1.5; }
-    .feed-entry { border-bottom: 1px solid #21262d; padding: 2px 0; }
-    .feed-trade { color: #3fb950; }
-    .feed-starved { color: #f85149; }
-    .feed-migrated { color: #d2a8ff; }
-    .feed-produced { color: #8b949e; }
+    .panel-section:last-child { border-bottom: none; }
+    .panel-title {
+      font-size: 0.7rem;
+      color: #f5c842;
+      margin-bottom: 6px;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      color: #c8a87a;
+      margin-bottom: 3px;
+    }
+    .metric-val { color: #f5deb3; }
 
+    /* ── Agent info bar ── */
     #agent-info {
-      padding: 8px 16px; background: #0d1117; border-top: 1px solid #30363d;
-      font-size: 0.72rem; color: #8b949e; flex-shrink: 0; min-height: 48px;
+      padding: 5px 12px;
+      background: #3d2b15;
+      border-top: 3px solid #7a5c30;
+      font-size: 0.68rem;
+      color: #c8a87a;
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    label { font-size: 0.75rem; color: #8b949e; }
-    input[type=range] { width: 80px; }
-    select { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; font-size: 0.75rem; padding: 2px; }
+    /* ── Event ticker ── */
+    #ticker-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1a1208;
+      border-top: 2px solid #7a5c30;
+      padding: 5px 12px;
+      flex-shrink: 0;
+      overflow: hidden;
+      height: 28px;
+    }
+    #ticker-label {
+      color: #f5c842;
+      font-size: 0.65rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #ticker-track {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      height: 18px;
+    }
+    #ticker-inner {
+      display: inline-flex;
+      gap: 24px;
+      white-space: nowrap;
+      position: absolute;
+      animation: ticker-scroll 30s linear infinite;
+    }
+    @keyframes ticker-scroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .ticker-entry { font-size: 0.68rem; }
+    .ev-trade    { color: #3fb950; }
+    .ev-starved  { color: #f85149; }
+    .ev-migrated { color: #d2a8ff; }
+    .ev-produced { color: #8b949e; }
   </style>
 </head>
 <body>
   <div id="toolbar">
-    <h1>Isle of Genesis</h1>
+    <h1>🏡 Isle of Genesis</h1>
     <button id="btn-pause">Pause</button>
     <button id="btn-step">Step</button>
     <button id="btn-reset">Reset</button>
@@ -66,7 +168,7 @@
     <span id="speed-label">2 Hz</span>
     <select id="snapshot-select"><option value="">— replay —</option></select>
     <button id="btn-replay">Replay</button>
-    <span id="tick-display">Tick: 0</span>
+    <span id="tick-display">📅 Day 0</span>
   </div>
 
   <div id="main">
@@ -74,17 +176,25 @@
       <canvas id="world-canvas"></canvas>
     </div>
     <div id="right-panel">
-      <div id="metrics-panel">
-        <h2>Metrics</h2>
+      <div class="panel-section">
+        <div class="panel-title">📊 Village Stats</div>
         <div id="charts-container"></div>
       </div>
-      <div id="feed-panel">
-        <h2>Events</h2>
-        <div id="feed-list"></div>
+      <div class="panel-section">
+        <div class="panel-title">💰 Market Prices</div>
+        <div id="prices-container"></div>
       </div>
     </div>
   </div>
-  <div id="agent-info">Click an agent to inspect</div>
+
+  <div id="agent-info">🧑 Click an agent to inspect</div>
+
+  <div id="ticker-bar">
+    <span id="ticker-label">📜 Events</span>
+    <div id="ticker-track">
+      <div id="ticker-inner"></div>
+    </div>
+  </div>
 
   <script src="canvas.js"></script>
   <script src="feed.js"></script>

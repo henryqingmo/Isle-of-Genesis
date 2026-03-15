@@ -1,11 +1,7 @@
-// charts.js — SVG sparklines for metrics
-const CHART_DEFS = [
-  { key: "total_food_inventory", label: "Food Supply",     color: "#4caf50" },
-  { key: "gini_coefficient",     label: "Gini",            color: "#f85149" },
-  { key: "population",           label: "Population",      color: "#d2a8ff" },
-  { key: "trade_volume",         label: "Trade Volume",    color: "#ffd600" },
-];
-const PRICE_COLORS = { food: "#4caf50", wood: "#795548", ore: "#78909c" };
+// charts.js — SVG sparklines, warm palette
+const PRICE_COLORS = { food: "#90c86a", wood: "#c8a87a", ore: "#78909c" };
+const SPARKLINE_BG = "#1a1208";
+const LABEL_COLOR  = "#a08060";
 
 const metricsHistory = [];
 const MAX_HISTORY = 200;
@@ -13,55 +9,93 @@ const MAX_HISTORY = 200;
 function updateCharts(metrics) {
   metricsHistory.push(metrics);
   if (metricsHistory.length > MAX_HISTORY) metricsHistory.shift();
+  renderStatsPanel(metrics);
+  renderPricesPanel(metrics);
+}
 
+function renderStatsPanel(latest) {
   const container = document.getElementById("charts-container");
+  if (!container) return;
   container.innerHTML = "";
 
-  for (const def of CHART_DEFS) {
-    container.appendChild(makeSparkline(def.label, def.color,
-      metricsHistory.map(m => m[def.key])));
+  // 4 text metric rows
+  const stats = [
+    { label: "Population",   value: latest.population,             fmt: v => Math.round(v) },
+    { label: "Total Wealth", value: latest.total_wealth,           fmt: v => `$${v.toFixed(0)}` },
+    { label: "Gini",         value: latest.gini_coefficient,       fmt: v => v.toFixed(3) },
+    { label: "Food/agent",   value: latest.total_food_inventory /
+                                    Math.max(1, latest.population), fmt: v => v.toFixed(1) },
+  ];
+  for (const s of stats) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:space-between;font-size:0.65rem;margin-bottom:2px;";
+    row.innerHTML =
+      `<span style="color:${LABEL_COLOR}">${s.label}</span>` +
+      `<span style="color:#f5deb3">${s.fmt(s.value)}</span>`;
+    container.appendChild(row);
   }
 
-  // price lines (3 on one chart)
-  const priceEl = document.createElement("div");
-  priceEl.style.marginBottom = "6px";
-  const priceLabel = document.createElement("div");
-  priceLabel.style.cssText = "font-size:0.65rem;color:#8b949e;margin-bottom:2px";
-  priceLabel.textContent = "Prices";
-  priceEl.appendChild(priceLabel);
-  priceEl.appendChild(makePriceSparkline());
-  container.appendChild(priceEl);
+  // 2 stacked sparklines: population (green) and Gini (amber)
+  container.appendChild(makeSparkline("Population trend", "#4caf50",
+    metricsHistory.map(m => m.population)));
+  container.appendChild(makeSparkline("Gini trend", "#f5c842",
+    metricsHistory.map(m => m.gini_coefficient)));
 }
 
-function makeSparkline(label, color, values) {
-  const W = 240, H = 36;
-  const wrapper = document.createElement("div");
-  wrapper.style.marginBottom = "4px";
+function renderPricesPanel(latest) {
+  const container = document.getElementById("prices-container");
+  if (!container) return;
+  container.innerHTML = "";
 
-  const lbl = document.createElement("div");
-  lbl.style.cssText = "font-size:0.65rem;color:#8b949e;margin-bottom:1px";
-  const last = values.length ? values[values.length - 1] : 0;
-  lbl.textContent = `${label}: ${Number(last).toFixed(2)}`;
-  wrapper.appendChild(lbl);
+  // Current prices with trend arrows
+  const resources = ["food", "wood", "ore"];
+  const labels    = { food: "🌾 Food", wood: "🪵 Wood", ore: "🪨 Ore" };
+  const prev = metricsHistory.length >= 2
+    ? metricsHistory[metricsHistory.length - 2].prices
+    : null;
 
-  wrapper.appendChild(svgSparkline(W, H, [{ values, color }]));
-  return wrapper;
-}
+  for (const r of resources) {
+    const cur  = latest.prices?.[r] ?? 0;
+    const row  = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:space-between;font-size:0.65rem;margin-bottom:3px;";
+    const trend = prev == null ? "─"
+      : cur > prev[r] ? "▲"
+      : cur < prev[r] ? "▼"
+      : "─";
+    row.innerHTML =
+      `<span style="color:${PRICE_COLORS[r]}">${labels[r]}</span>` +
+      `<span style="color:#f5deb3">$${cur.toFixed(2)} ${trend}</span>`;
+    container.appendChild(row);
+  }
 
-function makePriceSparkline() {
-  const W = 240, H = 36;
-  const series = ["food", "wood", "ore"].map(r => ({
+  // Price sparkline (3 lines)
+  const series = resources.map(r => ({
     values: metricsHistory.map(m => m.prices[r]),
     color: PRICE_COLORS[r],
   }));
-  return svgSparkline(W, H, series);
+  container.appendChild(svgSparkline(190, 36, series));
+}
+
+function makeSparkline(label, color, values) {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginBottom = "5px";
+
+  const lbl = document.createElement("div");
+  lbl.style.cssText = `font-size:0.65rem;color:${LABEL_COLOR};margin-bottom:1px`;
+  const last = values.length ? values[values.length - 1] : 0;
+  lbl.textContent = `${label}: ${Number(last).toFixed(2)}`;
+  wrapper.appendChild(lbl);
+  wrapper.appendChild(svgSparkline(190, 32, [{ values, color }]));
+  return wrapper;
 }
 
 function svgSparkline(W, H, series) {
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("width", W); svg.setAttribute("height", H);
-  svg.style.background = "#0d1117";
+  svg.setAttribute("width", W);
+  svg.setAttribute("height", H);
+  svg.style.background = SPARKLINE_BG;
+  svg.style.display = "block";
 
   const allValues = series.flatMap(s => s.values);
   const min = Math.min(...allValues, 0);
@@ -69,9 +103,9 @@ function svgSparkline(W, H, series) {
   const range = max - min || 1;
 
   for (const { values, color } of series) {
-    if (!values.length) continue;
+    if (values.length < 2) continue;
     const pts = values.map((v, i) => {
-      const px = (i / (values.length - 1 || 1)) * (W - 2) + 1;
+      const px = (i / (values.length - 1)) * (W - 2) + 1;
       const py = H - 2 - ((v - min) / range) * (H - 4);
       return `${px.toFixed(1)},${py.toFixed(1)}`;
     });

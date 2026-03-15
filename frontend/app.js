@@ -18,9 +18,9 @@ function onMessage(msg) {
       latestState = { agents: result.agents, market: result.market, world: result.world };
       renderState(latestState);
     }
+    document.getElementById("tick-display").textContent = `📅 Day ${result.tick}`;
     if (result.events) appendEvents(result.events, result.tick);
     if (result.metrics) updateCharts(result.metrics);
-    document.getElementById("tick-display").textContent = `Tick: ${result.tick}`;
   } else if (msg.type === "status") {
     paused = msg.payload.status === "paused";
     document.getElementById("btn-pause").textContent = paused ? "Resume" : "Pause";
@@ -39,7 +39,7 @@ document.getElementById("btn-step").addEventListener("click", () => {
 document.getElementById("btn-reset").addEventListener("click", () => {
   send({ type: "reset" });
   metricsHistory.length = 0;
-  document.getElementById("feed-list").innerHTML = "";
+  resetTicker();
 });
 
 const speedSlider = document.getElementById("speed");
@@ -76,7 +76,7 @@ document.getElementById("btn-replay").addEventListener("click", async () => {
   renderState(latestState);
   if (data.metrics) data.metrics.forEach(m => updateCharts(m));
   if (data.events) appendEvents(data.events, data.final_tick);
-  document.getElementById("tick-display").textContent = `Tick: ${data.final_tick} (replay)`;
+  document.getElementById("tick-display").textContent = `📅 Day ${data.final_tick} (replay)`;
 });
 
 // init

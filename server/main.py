@@ -39,6 +39,10 @@ def create_app(config: SimConfig | None = None) -> FastAPI:
     if frontend.exists():
         app.mount("/", StaticFiles(directory=str(frontend), html=True), name="frontend")
 
+    tiny_village = Path("tiny_village")
+    if tiny_village.exists():
+        app.mount("/tiny_village", StaticFiles(directory=str(tiny_village)), name="tiny_village")
+
     return app
 
 
